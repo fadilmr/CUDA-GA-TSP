@@ -4,33 +4,29 @@
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 
+
 // Number of individuals in the population
 const int populationSize = 2048;
 
 // Number of genes in each individual
-const int numGenes = 10;
+const int numCities = 10;
 
-__constant__ float distances[numGenes][numGenes];
+__constant__ float distances[numCities][numCities];
 
 // CUDA kernel for parallel fitness evaluation
-__global__ void evaluateFitness(int* population, int* fitness) {
+__global__ void calculateFitness(int* population, float* fitness) {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     while (tid < populationSize) {
-        float totalDistance = 0.0f;
-        for (int i = 0; i < numGenes - 1; ++i) {
-            int city1 = population[tid * numGenes + i];
-            int city2 = population[tid * numGenes + i + 1];
-            totalDistance += distances[city1][city2];
+        float tempFitness = 0.0f;
+        for (int i = 0; i < numCities - 1; ++i) {
+            tempFitness += distances[population[tid * numCities + i]][population[tid * numCities + i + 1]];
         }
-        // Add the distance from the last city back to the first city
-        int firstCity = population[tid * numGenes];
-        int lastCity = population[tid * numGenes + numGenes - 1];
-        totalDistance += distances[lastCity][firstCity];
+        tempFitness += distances[population[tid * numCities + numCities - 1]][population[tid * numCities]];
 
-        // The fitness is the inverse of the total distance (since we want to minimize the total distance)
-        // Convert the fitness to an integer by rounding the inverse of the total distance
-        fitness[tid] = round(1.0f / totalDistance);
+        fitness[tid] = 1.0f / tempFitness;
+
+        tid += blockDim.x * gridDim.x;
     }
 }
 
@@ -60,16 +56,16 @@ __global__ void crossoverAndMutation(int* population, float* fitness, curandStat
         int parent1 = selectParent(fitness, &state);
         int parent2 = selectParent(fitness, &state);
 
-        int crossoverPoint = curand(&state) % numGenes;
-        for (int i = crossoverPoint; i < numGenes; ++i) {
-            int temp = population[parent1 * numGenes + i];
-            population[parent1 * numGenes + i] = population[parent2 * numGenes + i];
-            population[parent2 * numGenes + i] = temp;
+        int crossoverPoint = curand(&state) % numCities;
+        for (int i = crossoverPoint; i < numCities; ++i) {
+            int temp = population[parent1 * numCities + i];
+            population[parent1 * numCities + i] = population[parent2 * numCities + i];
+            population[parent2 * numCities + i] = temp;
         }
 
-        int mutationPoint = curand(&state) % numGenes;
-        population[parent1 * numGenes + mutationPoint] = curand(&state) % numGenes;
-        population[parent2 * numGenes + mutationPoint] = curand(&state) % numGenes;
+        int mutationPoint = curand(&state) % numCities;
+        population[parent1 * numCities + mutationPoint] = curand(&state) % numCities;
+        population[parent2 * numCities + mutationPoint] = curand(&state) % numCities;
 
         states[tid] = state;
     }
@@ -77,27 +73,30 @@ __global__ void crossoverAndMutation(int* population, float* fitness, curandStat
 
 int main() {
     // Host arrays
-    float* h_population = new float[populationSize * numGenes];
+    float* h_population = new float[populationSize * numCities];
     float* h_fitness = new float[populationSize];
+
+    // Configure and launch CUDA kernel
+    int blockSize = 512;
+    int numBlocks = (populationSize + blockSize - 1) / blockSize;
+
+    // Number of generations
+    int numGenerations = 2000;
 
     // Initialize population randomly
     srand(static_cast<unsigned>(time(nullptr)));
-    for (int i = 0; i < populationSize * numGenes; ++i) {
+    for (int i = 0; i < populationSize * numCities; ++i) {
         h_population[i] = static_cast<float>(rand()) / RAND_MAX;
     }
 
     // Device arrays
     float* d_population;
     float* d_fitness;
-    cudaMalloc((void**)&d_population, sizeof(float) * populationSize * numGenes);
+    cudaMalloc((void**)&d_population, sizeof(float) * populationSize * numCities);
     cudaMalloc((void**)&d_fitness, sizeof(float) * populationSize);
 
     // Copy population from host to device
-    cudaMemcpy(d_population, h_population, sizeof(float) * populationSize * numGenes, cudaMemcpyHostToDevice);
-
-    // Configure and launch CUDA kernel
-    int blockSize = 128;
-    int numBlocks = (populationSize + blockSize - 1) / blockSize;
+    cudaMemcpy(d_population, h_population, sizeof(float) * populationSize * numCities, cudaMemcpyHostToDevice);
 
     // Timing events
     cudaEvent_t start, stop;
@@ -107,10 +106,8 @@ int main() {
     // Record start time
     cudaEventRecord(start, 0);
 
-    // Number of generations
-    int numGenerations = 2000;
     for (int generation = 0; generation < numGenerations; ++generation) {
-        evaluateFitness<<<numBlocks, blockSize>>>(reinterpret_cast<int*>(d_population), reinterpret_cast<int*>(d_fitness));
+        calculateFitness<<<numBlocks, blockSize>>>(reinterpret_cast<int*>(d_population), d_fitness);
         // Declare and allocate memory for d_states
         curandState* d_states;
         cudaMalloc((void**)&d_states, sizeof(curandState) * populationSize);
@@ -127,7 +124,7 @@ int main() {
     cudaMemcpy(h_fitness, d_fitness, sizeof(float) * populationSize, cudaMemcpyDeviceToHost);
 
     // Copy the population and fitness from device to host
-    cudaMemcpy(h_population, d_population, populationSize * numGenes * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_population, d_population, populationSize * numCities * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_fitness, d_fitness, populationSize * sizeof(float), cudaMemcpyDeviceToHost);
 
     // Find the individual with the highest fitness
@@ -140,8 +137,8 @@ int main() {
 
     // Print the best individual and its fitness
     printf("Best individual: ");
-    for (int i = 0; i < numGenes; ++i) {
-        printf("%f ", h_population[bestIndividual * numGenes + i]);
+    for (int i = 0; i < numCities; ++i) {
+        printf("%f ", h_population[bestIndividual * numCities + i]);
     }
     printf("\n");
 
