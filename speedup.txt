@@ -1,0 +1,23 @@
+Generation 100 :
+    Sequential = 348.69 ms
+    Speedup w 128 block size = 8.87 ms
+    Speedup w 256 block size = 20.06 ms
+    Speedup w 512 block size = 20.18 ms
+
+Generation 500 :
+    Sequential = 1728.91 ms
+    Speedup w 128 block size = 96.30 ms
+    Speedup w 256 block size = 97.44 ms
+    Speedup w 512 block size = 96.08 ms
+
+Generation 1000 :
+    Sequential = 3457.82 ms
+    Speedup w 128 block size = 181.78 ms
+    Speedup w 256 block size = 186.36 ms
+    Speedup w 512 block size = 143.14 ms
+
+Generation 2000 :
+    Sequential = 6922.94 ms
+    Speedup w 128 block size = 322.54 ms
+    Speedup w 256 block size = 325.76 ms
+    Speedup w 512 block size = 327.50 ms

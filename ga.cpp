@@ -151,7 +151,7 @@ int main() {
     start = clock();
 
     // Number of generations
-    int numGenerations = 2000;
+    int numGenerations = 1000;
 
     int bestIndividual;
     for (int generation = 0; generation < numGenerations; ++generation) {
